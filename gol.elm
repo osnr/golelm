@@ -19,7 +19,7 @@ boardWidth = cellWidth * colCount
 boardHeight = cellHeight * rowCount
 
 defaultBoard : Board
-defaultBoard = replicate rowCount False |> replicate colCount
+defaultBoard = replicate colCount False |> replicate rowCount
                |> zipCoords |> concat |> Dict.fromList
 
 -- input signals
