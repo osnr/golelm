@@ -1,9 +1,6 @@
 import Dict
-import open Automaton
 import Mouse
 import Keyboard
-
-type ScreenPos = (Int,Int)
 
 type Cell = (Int,Int)
 type Board = Dict.Dict Cell Bool
