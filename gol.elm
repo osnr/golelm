@@ -1,6 +1,7 @@
 import Dict
 import open Automaton
 import Mouse
+import Keyboard
 
 type ScreenPos = (Int,Int)
 
@@ -11,8 +12,8 @@ type Board = Dict.Dict Cell Bool
 cellWidth = 16
 cellHeight = 16
 
-colCount = 30
-rowCount = 30
+colCount = 25
+rowCount = 25
 
 boardWidth = cellWidth * colCount
 boardHeight = cellHeight * rowCount
@@ -22,60 +23,30 @@ defaultBoard = replicate rowCount False |> replicate colCount
                |> zipCoords |> concat |> Dict.fromList
 
 -- input signals
-type RawInput = { dt : Time
-                , pos : ScreenPos
-                , isDown : Bool }
+data Action = Flip Cell | Step
 
-data ClickState = Clicking | Clicked Cell | Up
-type InputState = { timeSinceStep : Time
-                  , clickState : ClickState }
+speed : Signal Time
+speed = every <| 0.3 * second
 
-data Action = Flip Cell | None
-type BoardInput = { step : Bool
-                  , action : Action }
+paused : Signal Bool
+paused = foldp (\_ isPaused -> not isPaused) False
+               (keepIf id False Keyboard.space)
 
-delta : Signal Time
-delta = fps 30
+steps : Signal Action
+steps = constant Step |> sampleOn speed |> dropWhen paused Step
 
-timeBetweenSteps : Time
-timeBetweenSteps = 0.3 * second
+flips : Signal Action
+flips = dropRepeats
+        <| (\(mx, my) -> Flip (mx `div` cellWidth,
+                               my `div` cellHeight))
+        <~ (keepIf (\(mx, my) -> mx <= boardWidth &&
+                                 my <= boardHeight &&
+                                 mx >= 0 && my >= 0)
+                   (-1, -1)
+        <| keepWhen Mouse.isDown (-1, -1)
+                    Mouse.position)
 
-stepInput : RawInput -> InputState -> (InputState,BoardInput)
-stepInput {dt, pos, isDown} {timeSinceStep, clickState} =
-    let step = if clickState /= Up
-                  then False
-                  else timeSinceStep >= timeBetweenSteps
-        (mx, my) = pos
-        cell = (mx `div` cellWidth,
-                my `div` cellHeight) in
-    ({ timeSinceStep = if step then 0
-                               else timeSinceStep + dt
-     , clickState = case (isDown, clickState) of
-                         (False, _) -> Up
-                         (True, Up) -> Clicking
-                         (True, Clicking) -> Clicked cell
-                         (True, Clicked cell') ->
-                             if cell' == cell
-                                then Clicked cell
-                                else Clicking },
-
-     { step = step
-     , action = case clickState of
-                     Up -> None
-                     Clicking ->
-                         if fst cell < colCount &&
-                            snd cell < rowCount
-                            then Flip cell
-                            else None
-                     Clicked cell -> None })
-
-inputAutomaton : Automaton RawInput BoardInput
-inputAutomaton = hiddenState { timeSinceStep = 0
-                             , clickState = Up }
-                             stepInput
-
-input : Signal RawInput
-input = RawInput <~ delta ~ Mouse.position ~ Mouse.isDown
+actions = merge steps flips
 
 -- game logic
 neighborDiffs : [(Int,Int)]
@@ -114,16 +85,11 @@ flipCell cell board = Dict.insert cell
                                   (not <| Dict.findWithDefault False cell board)
                                   board
 
-stepBoardInput : BoardInput -> Board -> Board
-stepBoardInput {step, action} board =
+stepBoard : Action -> Board -> Board
+stepBoard action board =
     case action of
+         Step -> stepSim board
          Flip cell -> flipCell cell board
-         None -> if step
-                    then stepSim board
-                    else board
-
-boardAutomaton : Automaton BoardInput Board
-boardAutomaton = state defaultBoard stepBoardInput
 
 -- utilities
 replicate : Int -> a -> [a]
@@ -140,18 +106,25 @@ zipCoords rs = let rsWithX = map (\r -> zip [0..length r - 1] r) rs in
 
 -- UI
 boardState : Signal Board
-boardState = run (inputAutomaton >>> boardAutomaton)
-                 defaultBoard
-                 input
+boardState = foldp stepBoard defaultBoard actions
 
 displayBoard : Board -> Element
-displayBoard board = collage boardWidth boardHeight
-                             <| map (\((cx, cy), state) ->
-                                      move (-(boardWidth / 2 - cellWidth / 2) + (toFloat cx) * cellWidth,
-                                            (boardHeight / 2 - cellHeight / 2) - (toFloat cy) * cellHeight) .
-                                      filled (if state then blue else grey)
-                                             <| rect (cellWidth - 1) (cellHeight - 1))
-                                    <| Dict.toList board
+displayBoard board = 
+    collage boardWidth boardHeight
+            <| map (\((cx, cy), state) ->
+                     move (-(boardWidth / 2 - cellWidth / 2) + (toFloat cx) * cellWidth,
+                           (boardHeight / 2 - cellHeight / 2) - (toFloat cy) * cellHeight) .
+                     filled (if state then blue else grey)
+                            <| rect (cellWidth - 1) (cellHeight - 1))
+                   <| Dict.toList board
 
+displayGame : Board -> Bool -> Element
+displayGame board isPaused =
+    let boardDisp = displayBoard board in
+    if isPaused
+       then layers [ boardDisp
+                   , plainText "Paused" ]
+       else boardDisp
+                   
 main : Signal Element
-main = displayBoard <~ boardState
+main = displayGame <~ boardState ~ paused
