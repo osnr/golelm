@@ -62,7 +62,11 @@ stepInput {dt, pos, isDown} {timeSinceStep, clickState} =
      { step = step
      , action = case clickState of
                      Up -> None
-                     Clicking -> Flip cell
+                     Clicking ->
+                         if fst cell < colCount &&
+                            snd cell < rowCount
+                            then Flip cell
+                            else None
                      Clicked cell -> None })
 
 inputAutomaton : Automaton RawInput BoardInput
@@ -106,7 +110,8 @@ stepSim : Board -> Board
 stepSim board = Dict.foldr (stepCell board) Dict.empty board
 
 flipCell : Cell -> Board -> Board
-flipCell cell board = Dict.insert cell (not <| Dict.findWithDefault False cell board)
+flipCell cell board = Dict.insert cell
+                                  (not <| Dict.findWithDefault False cell board)
                                   board
 
 stepBoardInput : BoardInput -> Board -> Board
@@ -142,12 +147,11 @@ boardState = run (inputAutomaton >>> boardAutomaton)
 displayBoard : Board -> Element
 displayBoard board = collage boardWidth boardHeight
                              <| map (\((cx, cy), state) ->
-                                      move (-(boardWidth / 2) + (toFloat cx) * cellWidth,
-                                            (boardHeight / 2) - (toFloat cy) * cellHeight) .
+                                      move (-(boardWidth / 2 - cellWidth / 2) + (toFloat cx) * cellWidth,
+                                            (boardHeight / 2 - cellHeight / 2) - (toFloat cy) * cellHeight) .
                                       filled (if state then blue else grey)
-                                             <| rect cellWidth cellHeight)
+                                             <| rect (cellWidth - 1) (cellHeight - 1))
                                     <| Dict.toList board
-
 
 main : Signal Element
 main = displayBoard <~ boardState
