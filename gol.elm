@@ -1,3 +1,6 @@
+-- Conway's Game of Life in Elm.
+-- Press SPACE to pause.
+
 import Dict
 import Mouse
 import Keyboard
